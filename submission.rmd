@@ -1,0 +1,84 @@
+---
+title: "Predicting the Manner in which an Exercise was done using the Weight Lifting Exercises
+ Dataset"
+author: Grzegorz Chlebus
+date: 11/06/2020
+output: html_document
+---
+
+## Introduction
+The Weight Lifting Exercises Dataset contains sensor measurements of six participants performing
+ the unilateral dumbbell biceps curl in different manners (one correct four incorrect ones).
+In this assignment I'll investigate whether the manner in which the exercise was performed can be
+ predicted from the measurements.
+
+```{r, include = FALSE}
+require(caret)
+require(corrplot)
+```
+
+## EDA
+```{r}
+pmlTraining <- read.csv(file = "./data/pml-training.csv")
+pmlTesting <- read.csv(file = "./data/pml-testing.csv")
+dim(pmlTraining)
+```
+Columns with mostly nan values and near zero variance are removed as they have none predictive
+ power. Additionally, columns with values (e.g., row number, timestamps, user name) that shouldn't be used as predictors are removed.
+```{r}
+# remove columns containing mostly nan values
+nanColumns <- which(colSums(sapply(pmlTraining, is.na)) > (0.95 * nrow(pmlTraining)))
+sprintf("Dropping %d columns, which contain mostly nan values.", length(nanColumns))
+pmlTraining <- pmlTraining[, -nanColumns]
+pmlTesting <- pmlTesting[, -nanColumns]
+
+# remove column with near zero variance
+nearZeroVarColumns <- nearZeroVar(pmlTraining)
+sprintf("Dropping %d columns, which have near zero variance.", length(nearZeroVarColumns))
+pmlTraining <- pmlTraining[, -nearZeroVarColumns]
+pmlTesting <- pmlTesting[, -nearZeroVarColumns]
+
+# remove columns that we don't want to use as predictors, i.e., row number, timestamps, user name
+# , num_window
+pmlTraining <- pmlTraining[, -c(1:6)]
+pmlTesting <- pmlTesting[, -c(1:6)]
+```
+
+Most of the features have low correlation with the other ones.
+```{r}
+correlation <- cor(pmlTraining[, !(names(pmlTraining) %in% c("classe"))])
+corrplot(correlation, type = "upper", tl.cex = 0.5)
+```
+
+## Model Selection
+Data split.
+```{r}
+set.seed(1234)
+inTraining <- createDataPartition(pmlTraining$classe, p = .8, list = FALSE)
+training <- pmlTraining[inTraining,]
+testing <- pmlTraining[-inTraining,]
+```
+
+Let's train a knn classifier, which is a simple classification model.
+```{r}
+set.seed(1234)
+trControl <- trainControl(method = "cv", number = 5)
+knnModel <- train(classe ~ ., data = training, method = "knn", trControl = trControl)
+confMat <- confusionMatrix(data = predict(knnModel, testing), reference = testing$classe)
+confMat$overall["Accuracy"]
+```
+Let's train a random forest classifier, which is a more advanced classification algorithm, which
+ is known for its good performance.
+```{r}
+set.seed(1234)
+trControl <- trainControl(method = "cv", number = 5)
+rfModel <- train(classe ~ ., data = training, method = "rf", verbose = FALSE, trControl = trControl)
+confMat <- confusionMatrix(data = predict(rfModel, testing), reference = testing$classe)
+confMat$overall["Accuracy"]
+```
+The random forest performs much better on the test set. Therefore, the random forest model is
+ applied to the 20 test cases provided with the assignment.
+```{r}
+testPredictions <- predict(rfModel, pmlTesting)
+testPredictions
+```
